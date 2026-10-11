@@ -1,0 +1,876 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>NeverLose · 永不丢数据的本地收集工具 v0.2</title>
+<!--
+  NeverLose v0.2 — 单文件离线本地收集工具
+  内核信念：输入即落盘，绝不在用户确认前刷新或覆盖。
+  零外部依赖 / 零网络请求 / 双击直开。
+  仅使用 localStorage 与 Blob 下载，全部离线。
+  v0.1 新增：条目全文搜索/过滤、Ctrl(Cmd)+Enter 快速提交、存储占用显示与接近上限告警。
+  v0.2 新增：标签/分类 + 按标签过滤、条目排序、导出 Markdown。
+-->
+<style>
+/* ============================ 样式（内联，无外部字体/图片） ============================ */
+:root{
+  --bg:#0f1420; --panel:#171e2e; --panel2:#1e2740; --line:#2b3550;
+  --fg:#e8edf7; --muted:#9aa7c2; --accent:#4f8cff; --accent2:#2f6fd6;
+  --ok:#2ecc71; --warn:#ffb020; --danger:#ff5c5c; --danger2:#d63b3b;
+  --radius:10px;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0; background:var(--bg); color:var(--fg);
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+  font-size:14px; line-height:1.5;
+}
+header{
+  display:flex; flex-wrap:wrap; gap:10px; align-items:center;
+  padding:12px 16px; background:var(--panel); border-bottom:1px solid var(--line);
+  position:sticky; top:0; z-index:5;
+}
+header h1{font-size:16px; margin:0 8px 0 0; font-weight:700; letter-spacing:.5px}
+header .tag{font-size:12px; color:var(--muted); margin-right:auto}
+.spacer{flex:1 1 auto}
+button.btn{
+  background:var(--panel2); color:var(--fg); border:1px solid var(--line);
+  padding:7px 12px; border-radius:8px; cursor:pointer; font-size:13px;
+  transition:background .12s,border-color .12s;
+}
+button.btn:hover{background:#26314f; border-color:#3a4870}
+button.btn.primary{background:var(--accent2); border-color:var(--accent)}
+button.btn.primary:hover{background:#3f83ec}
+button.btn.danger{border-color:#5a2b2b; color:#ffd7d7}
+button.btn.danger:hover{background:#3a1f1f}
+button.btn.small{padding:4px 8px; font-size:12px}
+#persistBanner{
+  display:none; padding:10px 16px; font-size:13px; border-bottom:1px solid var(--line);
+  background:#3a2410; color:#ffdca8;
+}
+#persistBanner.error{background:#3a1414; color:#ffbcbc}
+#persistBanner.show{display:block}
+main{display:grid; grid-template-columns:300px 1fr 320px; gap:14px; padding:14px; align-items:start}
+@media (max-width:1080px){ main{grid-template-columns:1fr} }
+.panel{background:var(--panel); border:1px solid var(--line); border-radius:var(--radius); overflow:hidden}
+.panel > h2{
+  font-size:13px; margin:0; padding:10px 12px; font-weight:600; color:var(--muted);
+  border-bottom:1px solid var(--line); display:flex; align-items:center; gap:8px;
+}
+.panel .body{padding:12px}
+.count{font-size:11px; color:var(--muted); margin-left:auto}
+/* 条目列表 */
+.list{max-height:60vh; overflow:auto}
+.item{
+  padding:9px 10px; border:1px solid transparent; border-radius:8px; cursor:pointer;
+  margin-bottom:6px; background:var(--panel2);
+}
+.item:hover{border-color:#3a4870}
+.item.active{border-color:var(--accent); background:#1c2b4d}
+.item .t{font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.item .s{font-size:11px; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.item .row{display:flex; gap:6px; margin-top:6px}
+.badge{display:inline-block; font-size:10px; padding:1px 6px; border-radius:8px; background:#2a3b63; color:#cbd5f5; margin-left:6px; vertical-align:middle}
+select#sortSelect{background:#0f1730; color:#cbd5f5; border:1px solid #2a3557; border-radius:6px; padding:4px 6px; font-size:12px}
+/* 表单 */
+label.fld{display:block; margin-bottom:10px}
+label.fld span{display:block; font-size:12px; color:var(--muted); margin-bottom:4px}
+input[type=text], textarea{
+  width:100%; background:#0d1220; color:var(--fg); border:1px solid var(--line);
+  border-radius:8px; padding:9px 10px; font-size:14px; font-family:inherit; resize:vertical;
+}
+input[type=text]:focus, textarea:focus{outline:none; border-color:var(--accent)}
+textarea{min-height:150px}
+.hint{font-size:11px; color:var(--muted)}
+#draftState{font-size:12px; color:var(--ok); margin-top:8px; min-height:16px}
+#draftState.unsaved{color:var(--warn)}
+/* 历史 */
+.hist{max-height:60vh; overflow:auto}
+.ver{padding:9px 10px; border:1px solid var(--line); border-radius:8px; margin-bottom:6px; background:var(--panel2)}
+.ver .ts{font-size:12px; font-weight:600}
+.ver .meta{font-size:11px; color:var(--muted); margin:2px 0 6px}
+.ver .row{display:flex; gap:6px}
+.empty{color:var(--muted); font-size:12px; text-align:center; padding:16px 6px}
+.kv{font-size:11px; color:var(--muted)}
+/* 搜索栏（v0.1） */
+.searchbar{display:flex; gap:6px; margin-bottom:8px}
+.searchbar input[type=text]{flex:1 1 auto}
+#searchCount{min-height:14px; margin-bottom:6px}
+/* 存储占用告警横幅（v0.1） */
+#storageAlert{display:none; padding:10px 16px; font-size:13px; border-bottom:1px solid var(--line); background:#3a2410; color:#ffdca8; align-items:center; gap:10px}
+#storageAlert.error{background:#3a1414; color:#ffbcbc}
+#storageAlert.show{display:flex}
+#storageAlertMsg{flex:1 1 auto}
+hr.sep{border:0; border-top:1px solid var(--line); margin:12px 0}
+/* 弹框 */
+.modal-overlay{position:fixed; inset:0; background:rgba(4,7,14,.7); display:flex; align-items:center; justify-content:center; z-index:100; padding:16px}
+.modal{background:var(--panel); border:1px solid var(--line); border-radius:12px; max-width:640px; width:100%; padding:18px; box-shadow:0 20px 60px rgba(0,0,0,.5)}
+.modal h3{margin:0 0 10px; font-size:16px}
+.modal-msg{color:var(--fg); font-size:13px; white-space:pre-wrap; margin-bottom:10px}
+.modal-pre{background:#0d1220; border:1px solid var(--line); border-radius:8px; padding:10px; max-height:40vh; overflow:auto; font-size:12px; white-space:pre-wrap; color:var(--muted); margin:0 0 12px}
+.modal-btns{display:flex; gap:8px; justify-content:flex-end; flex-wrap:wrap}
+footer{padding:10px 16px; color:var(--muted); font-size:11px; border-top:1px solid var(--line)}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>🛟 NeverLose <span class="tag" id="appVersion">v0.2 · 本地收集工具</span></h1>
+  <span class="spacer"></span>
+  <button class="btn" id="btnNew">＋ 新建条目</button>
+  <button class="btn" id="btnExportJson">导出 JSON</button>
+  <button class="btn" id="btnExportCsv">导出 CSV</button>
+  <button class="btn" id="btnExportMd">导出 Markdown</button>
+  <button class="btn" id="btnImport">导入</button>
+  <button class="btn danger" id="btnClear">清空</button>
+</header>
+
+<div id="persistBanner" role="alert"></div>
+<div id="storageAlert" role="alert">
+  <span id="storageAlertMsg"></span>
+  <button class="btn small" id="btnDismissStorage">关闭</button>
+</div>
+
+<main>
+  <!-- 左：条目列表 -->
+  <section class="panel">
+    <h2>条目列表 <span class="count" id="entryCount"></span></h2>
+    <div class="body">
+      <div class="searchbar">
+        <input type="text" id="searchInput" autocomplete="off" placeholder="搜索姓名或内容…（大小写不敏感）">
+        <button class="btn small" id="btnClearSearch" title="清空搜索">✕ 清空</button>
+      </div>
+      <div class="searchbar">
+        <input type="text" id="tagFilter" autocomplete="off" placeholder="按标签过滤…（留空显示全部）">
+        <select id="sortSelect" title="排序方式">
+          <option value="updated_desc">最近更新</option>
+          <option value="updated_asc">最早更新</option>
+          <option value="name_asc">按名称</option>
+          <option value="created_desc">创建时间</option>
+        </select>
+      </div>
+      <div class="kv" id="searchCount"></div>
+      <div class="list" id="entryList"></div>
+    </div>
+  </section>
+
+  <!-- 中：编辑表单（输入即落盘） -->
+  <section class="panel">
+    <h2>编辑（输入即自动保存）</h2>
+    <div class="body">
+      <label class="fld"><span>备注</span>
+        <input type="text" id="f-note" autocomplete="off" placeholder="例如：待跟进 / 标签">
+      </label>
+      <label class="fld"><span>姓名</span>
+        <input type="text" id="f-name" autocomplete="off" placeholder="例如：张三">
+      </label>
+      <label class="fld"><span>标签</span>
+        <input type="text" id="f-tag" autocomplete="off" placeholder="例如：工作 / 待办 / 客户A">
+      </label>
+      <label class="fld"><span>内容</span>
+        <textarea id="f-content" placeholder="在此输入内容……每次输入都会立即保存到本地，无需点保存。"></textarea>
+      </label>
+      <div id="draftState">就绪。</div>
+      <div class="hint">提示：所有输入实时写入 localStorage；每次编辑稳定后会生成一个带时间戳的版本快照，可在右侧查看或回滚。在任意输入框内按 Ctrl/⌘+Enter 可快速提交并新建下一条。</div>
+    </div>
+  </section>
+
+  <!-- 右：版本历史 -->
+  <section class="panel">
+    <h2>版本历史（时间戳快照） <span class="count" id="verCount"></span></h2>
+    <div class="body hist" id="historyList"></div>
+  </section>
+</main>
+
+<footer>NeverLose v0.2 · 单文件离线 · 数据仅存于本机浏览器 · 输入即落盘，绝不静默覆盖 · <span id="storageStatus" class="kv"></span></footer>
+
+<input type="file" id="fileInput" accept=".json,application/json" style="display:none">
+
+<!-- ============================================================
+     纯逻辑核心（无 DOM 依赖，可被 node 单测提取执行）
+     ============================================================ -->
+<script>
+/* NL-CORE-START */
+(function (root) {
+  "use strict";
+
+  function pad(n) { n = String(n); return n.length < 2 ? "0" + n : n; }
+
+  // 本地时间 ISO 串（用作快照时间戳 / 文件名片段）
+  function nowIso() {
+    var d = new Date();
+    return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()) +
+      "T" + pad(d.getHours()) + ":" + pad(d.getMinutes()) + ":" + pad(d.getSeconds());
+  }
+
+  function rand(n) {
+    var s = "", c = "abcdefghijklmnopqrstuvwxyz0123456789";
+    for (var i = 0; i < n; i++) s += c.charAt(Math.floor(Math.random() * c.length));
+    return s;
+  }
+
+  function str(v) { return (v === null || v === undefined) ? "" : String(v); }
+
+  // CSV 单元格转义：含逗号/引号/换行时用双引号包裹，内部引号翻倍
+  function csvEscape(v) {
+    if (v === null || v === undefined) return "";
+    var s = String(v);
+    if (/[",\r\n]/.test(s)) return '"' + s.replace(/"/g, '""') + '"';
+    return s;
+  }
+
+  // 把任意来源对象归一化为标准条目
+  function normalizeEntry(o) {
+    o = o || {};
+    return {
+      id: str(o.id) || ("e_" + rand(10)),
+      note: str(o.note !== undefined ? o.note : o["备注"]),
+      name: str(o.name !== undefined ? o.name : o["姓名"]),
+      tag: str(o.tag !== undefined ? o.tag : o["标签"]),
+      content: str(o.content !== undefined ? o.content : o["内容"]),
+      created: str(o.created) || nowIso(),
+      updated: str(o.updated) || nowIso()
+    };
+  }
+
+  // 解析导入文本：支持 完整db对象 / 条目数组 / 单条目
+  function parseImport(text) {
+    var obj;
+    try { obj = JSON.parse(text); }
+    catch (e) { return { ok: false, error: "不是有效的 JSON：" + e.message }; }
+    var arr;
+    if (Array.isArray(obj)) arr = obj;
+    else if (obj && Array.isArray(obj.entries)) arr = obj.entries;
+    else if (obj && typeof obj === "object") arr = [obj];
+    else return { ok: false, error: "无法识别的数据结构" };
+    if (!arr.length) return { ok: false, error: "没有可导入的条目" };
+    return { ok: true, entries: arr.map(normalizeEntry) };
+  }
+
+  // 内容指纹：仅取 稳定字段，用于版本去重（忽略 updated 时间）
+  function dbFingerprint(entries) {
+    return JSON.stringify((entries || []).map(function (e) {
+      return [e.id, str(e.note), str(e.name), str(e.tag), str(e.content)];
+    }));
+  }
+
+  // 追加一个版本快照；与上一个指纹相同则跳过（去重）；超过 cap 丢弃最旧
+  function pushVersion(versions, entries, meta, opts) {
+    versions = Array.isArray(versions) ? versions.slice() : [];
+    opts = opts || {};
+    var cap = opts.cap || 500;
+    var fp = dbFingerprint(entries);
+    var last = versions.length ? versions[versions.length - 1] : null;
+    if (!opts.force && last && last.fp === fp) return { versions: versions, added: false };
+    var snapshot = (entries || []).map(function (e) {
+      return { id: e.id, note: str(e.note), name: str(e.name), tag: str(e.tag), content: str(e.content), created: str(e.created), updated: str(e.updated) };
+    });
+    var v = {
+      id: "v_" + Date.now().toString(36) + "_" + rand(6),
+      ts: (meta && meta.ts) || nowIso(),
+      label: (meta && meta.label) || "自动快照",
+      fp: fp,
+      count: snapshot.length,
+      data: snapshot
+    };
+    var out = versions.concat([v]);
+    var dropped = 0;
+    if (out.length > cap) { dropped = out.length - cap; out = out.slice(dropped); }
+    return { versions: out, added: true, version: v, dropped: dropped };
+  }
+
+  // 条目 -> CSV（含表头）
+  function entriesToCsv(entries) {
+    var cols = ["序号", "备注", "姓名", "内容", "创建时间", "更新时间", "标签"];
+    var lines = [cols.map(csvEscape).join(",")];
+    (entries || []).forEach(function (e, i) {
+      lines.push([i + 1, str(e.note), str(e.name), str(e.content), str(e.created), str(e.updated), str(e.tag)].map(csvEscape).join(","));
+    });
+    return lines.join("\r\n");
+  }
+
+  // 条目全文过滤：对 name 与 content 做大小写不敏感的子串匹配（v0.1）
+  // 空/纯空白查询 => 返回全部（不改变顺序，不修改入参）
+  function filterEntries(entries, query) {
+    var list = Array.isArray(entries) ? entries.slice() : [];
+    var q = str(query).toLowerCase();
+    if (q.trim() === "") return list;
+    return list.filter(function (e) {
+      if (!e) return false;
+      return str(e.name).toLowerCase().indexOf(q) !== -1 ||
+             str(e.content).toLowerCase().indexOf(q) !== -1;
+    });
+  }
+
+  // UTF-16 字节估算：字符串长度 × 2（localStorage 按 UTF-16 计量的近似，v0.1）
+  function estimateBytes(s) {
+    return (s === null || s === undefined) ? 0 : String(s).length * 2;
+  }
+
+  // 存储容量相关默认阈值（v0.1）：上限取常见 localStorage 容量 5 MiB
+  var STORAGE_LIMIT_BYTES = 5 * 1024 * 1024;
+  var STORAGE_WARN_PERCENT = 80;    // ≥80% 触发“接近上限”提醒
+  var STORAGE_DANGER_PERCENT = 95;  // ≥95% 视为危险
+
+  // 依据占用字节给出百分比 / 剩余 / 告警级别（纯函数，v0.1）
+  function storageStatus(bytes, opts) {
+    opts = opts || {};
+    var limit = opts.limit || STORAGE_LIMIT_BYTES;
+    var warnPct = (opts.warnPercent === undefined) ? STORAGE_WARN_PERCENT : opts.warnPercent;
+    var dangerPct = (opts.dangerPercent === undefined) ? STORAGE_DANGER_PERCENT : opts.dangerPercent;
+    var b = (typeof bytes === "number" && isFinite(bytes) && bytes > 0) ? bytes : 0;
+    var pct = limit > 0 ? (b / limit) * 100 : 0;
+    var level = "ok";
+    if (pct >= dangerPct) level = "danger";
+    else if (pct >= warnPct) level = "warn";
+    return {
+      bytes: b,
+      limit: limit,
+      percent: Math.round(pct * 10) / 10,
+      remaining: Math.max(0, limit - b),
+      level: level,
+      warn: pct >= warnPct
+    };
+  }
+
+  // 是否按下了“提交”快捷键：Ctrl+Enter 或 Cmd(Meta)+Enter（v0.1）
+  function isSubmitShortcut(ev) {
+    if (!ev) return false;
+    var enter = (ev.key === "Enter") || (ev.keyCode === 13) || (ev.which === 13);
+    return !!(enter && (ev.ctrlKey || ev.metaKey));
+  }
+
+  // v0.2：按标签过滤（大小写不敏感的子串匹配 tag；空标签 => 全部；不修改入参）
+  function filterByTag(entries, tag) {
+    var list = Array.isArray(entries) ? entries.slice() : [];
+    var t = str(tag).toLowerCase().trim();
+    if (t === "") return list;
+    return list.filter(function (e) { return e && str(e.tag).toLowerCase().indexOf(t) !== -1; });
+  }
+
+  // v0.2：排序（返回新数组，不修改入参）
+  // mode: updated_desc(默认) | updated_asc | name_asc | created_desc
+  function sortEntries(entries, mode) {
+    var list = Array.isArray(entries) ? entries.slice() : [];
+    var m = str(mode) || "updated_desc";
+    function cmpStr(a, b) { return str(a) < str(b) ? -1 : (str(a) > str(b) ? 1 : 0); }
+    list.sort(function (a, b) {
+      if (m === "updated_asc") return cmpStr(a.updated, b.updated);
+      if (m === "created_desc") return cmpStr(b.created, a.created);
+      if (m === "name_asc") { var s = cmpStr(a.name, b.name); return s !== 0 ? s : cmpStr(b.updated, a.updated); }
+      return cmpStr(b.updated, a.updated);
+    });
+    return list;
+  }
+
+  // v0.2：条目 -> Markdown（标题 + 标签/备注/时间 + 内容）
+  function entriesToMarkdown(entries) {
+    var list = Array.isArray(entries) ? entries : [];
+    var lines = ["# NeverLose 导出", ""];
+    lines.push("导出时间：" + nowIso() + " · 共 " + list.length + " 条", "");
+    list.forEach(function (e, i) {
+      var title = str(e.name).trim() || str(e.note).trim() || ("条目 " + (i + 1));
+      lines.push("## " + (i + 1) + ". " + title);
+      var meta = [];
+      if (str(e.tag).trim()) meta.push("标签: " + str(e.tag).trim());
+      if (str(e.note).trim()) meta.push("备注: " + str(e.note).trim());
+      if (str(e.updated).trim()) meta.push("更新: " + str(e.updated).trim());
+      if (meta.length) lines.push("*" + meta.join(" · ") + "*", "");
+      lines.push(str(e.content), "");
+      lines.push("---", "");
+    });
+    return lines.join("\n");
+  }
+
+  root.NL = {
+    nowIso: nowIso,
+    rand: rand,
+    csvEscape: csvEscape,
+    normalizeEntry: normalizeEntry,
+    parseImport: parseImport,
+    dbFingerprint: dbFingerprint,
+    pushVersion: pushVersion,
+    entriesToCsv: entriesToCsv,
+    filterEntries: filterEntries,
+    filterByTag: filterByTag,
+    sortEntries: sortEntries,
+    entriesToMarkdown: entriesToMarkdown,
+    estimateBytes: estimateBytes,
+    storageStatus: storageStatus,
+    isSubmitShortcut: isSubmitShortcut,
+    STORAGE_LIMIT_BYTES: STORAGE_LIMIT_BYTES,
+    STORAGE_WARN_PERCENT: STORAGE_WARN_PERCENT,
+    STORAGE_DANGER_PERCENT: STORAGE_DANGER_PERCENT
+  };
+})(typeof globalThis !== "undefined" ? globalThis : this);
+/* NL-CORE-END */
+</script>
+
+<!-- ============================================================
+     应用层（DOM / 持久化 / 交互）
+     ============================================================ -->
+<script>
+(function () {
+  "use strict";
+
+  var APP_VERSION = "v0.2";               // 应用版本（页面标识 / 导出元数据）
+  var STORAGE_KEY = "neverlose.v0.db";   // 单一持久化键（沿用 v0 键名，确保 v0→v0.1 升级不丢既有数据）
+  var MAX_VERSIONS = 500;                 // 版本上限（超出丢弃最旧，README 说明）
+  var SNAPSHOT_DEBOUNCE_MS = 700;         // 编辑稳定后生成快照，避免每次按键爆炸
+
+  // ---- 存储占用告警状态（v0.1） ----
+  var storageAlertDismissed = false;
+  var lastStorageLevel = "ok";
+
+  // ---- 内存态：即使写盘失败，数据也始终存在于这里，绝不丢 ----
+  var db = { entries: [], activeId: null, versions: [] };
+  var snapshotTimer = null;
+
+  // ---------- 持久化（需求 2 + 需求 6） ----------
+  function load() {
+    try {
+      var raw = localStorage.getItem(STORAGE_KEY);
+      if (raw) {
+        var p = JSON.parse(raw);
+        if (p && Array.isArray(p.entries)) {
+          db.entries = p.entries;
+          db.versions = Array.isArray(p.versions) ? p.versions : [];
+          db.activeId = p.activeId || (db.entries[0] && db.entries[0].id) || null;
+        }
+      }
+    } catch (e) {
+      showBanner("读取本地数据失败：" + e.message, true);
+    }
+    updateStorageStatus();                // ★ v0.1：即使没有已存数据也要显示初始占用
+  }
+
+  function save() {
+    var okSaved = false;
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(db));
+      hideBanner();                       // 写成功则清除告警
+      setStatus(true);
+      okSaved = true;
+    } catch (e) {
+      // quota 超限 / 隐私模式 / 被禁用 —— 可见提示，但内存数据不丢
+      showBanner("⚠️ 自动保存失败（可能是隐私模式、存储已满或被禁用）。当前数据仅保存在内存中，请立即点【导出 JSON】备份。错误：" + (e && e.name ? e.name : "Error") + " - " + (e && e.message ? e.message : e), true);
+      setStatus(false);
+    }
+    updateStorageStatus();                // ★ v0.1：每次写盘后刷新占用显示与接近上限告警
+    return okSaved;
+  }
+
+  // ---------- 小工具 ----------
+  function $(id) { return document.getElementById(id); }
+  function newId() { return "e_" + Date.now().toString(36) + "_" + NL.rand(6); }
+
+  function showBanner(msg, isError) {
+    var b = $("persistBanner");
+    b.textContent = msg;
+    b.className = "show" + (isError ? " error" : "");
+  }
+  function hideBanner() { $("persistBanner").className = ""; }
+  function setStatus(saved) {
+    var el = $("draftState");
+    if (saved) { el.className = ""; el.textContent = "已自动保存 · " + NL.nowIso(); }
+    else { el.className = "unsaved"; el.textContent = "⚠️ 未写入磁盘（仅内存中，请导出备份）"; }
+  }
+
+  // ---------- v0.1：存储占用显示 + 接近上限告警 ----------
+  function currentQuery() { var el = $("searchInput"); return el ? el.value : ""; }
+  function currentTagQuery() { var el = $("tagFilter"); return el ? el.value : ""; }
+  function currentSortMode() { var el = $("sortSelect"); return el ? (el.value || "updated_desc") : "updated_desc"; }
+  function currentStorageBytes() { return NL.estimateBytes(JSON.stringify(db)); }
+
+  function fmtBytes(n) {
+    if (n < 1024) return n + " B";
+    if (n < 1024 * 1024) return (n / 1024).toFixed(1) + " KB";
+    return (n / (1024 * 1024)).toFixed(2) + " MB";
+  }
+
+  function updateStorageStatus() {
+    var st = NL.storageStatus(currentStorageBytes());
+    var el = $("storageStatus");
+    if (el) el.textContent = "存储占用 " + fmtBytes(st.bytes) + " / " + fmtBytes(st.limit) + "（" + st.percent + "%）";
+    // 级别变化时重置“已关闭”状态，确保新出现的更严重告警仍可见
+    if (st.level !== lastStorageLevel) storageAlertDismissed = false;
+    lastStorageLevel = st.level;
+    var alertBox = $("storageAlert");
+    if (!alertBox) return st;
+    if (st.warn && !storageAlertDismissed) {
+      var head = (st.level === "danger") ? "⛔ 存储空间即将用尽：" : "⚠️ 存储空间接近上限：";
+      $("storageAlertMsg").textContent = head + "已用约 " + st.percent + "%，仅剩 " + fmtBytes(st.remaining) +
+        "。请立即点【导出 JSON】备份，并在版本历史中清理不再需要的快照。";
+      alertBox.className = "show" + (st.level === "danger" ? " error" : "");
+    } else {
+      alertBox.className = "";
+    }
+    return st;
+  }
+
+  function getActive() {
+    if (!db.activeId) return null;
+    for (var i = 0; i < db.entries.length; i++) if (db.entries[i].id === db.activeId) return db.entries[i];
+    return null;
+  }
+  function ensureActive() {              // 没有活动条目时按需创建（例如清空后再次输入）
+    var e = getActive();
+    if (e) return e;
+    e = { id: newId(), note: "", name: "", content: "", created: NL.nowIso(), updated: NL.nowIso() };
+    db.entries.push(e);
+    db.activeId = e.id;
+    return e;
+  }
+  function findEntry(id) {
+    for (var i = 0; i < db.entries.length; i++) if (db.entries[i].id === id) return db.entries[i];
+    return null;
+  }
+  function findVersion(id) {
+    for (var i = 0; i < db.versions.length; i++) if (db.versions[i].id === id) return db.versions[i];
+    return null;
+  }
+  function entryTitle(e) {
+    return (e.name || "").trim() || (e.note || "").trim() || (e.content || "").trim().slice(0, 24) || "（未命名条目）";
+  }
+  function entrySub(e) {
+    var s = (e.content || "").replace(/\s+/g, " ").trim();
+    return s.slice(0, 40) || "空内容";
+  }
+
+  // ---------- 需求 2：输入即落盘 ----------
+  function onFieldInput(key, value) {
+    var e = ensureActive();
+    e[key] = value;
+    e.updated = NL.nowIso();
+    save();                              // ★ 每次 input 事件立即写盘，无需点保存
+    renderEntryList();
+    renderEntryMeta();
+    scheduleSnapshot();                  // ★ 需求 3：顺便排一个版本快照
+  }
+
+  // ---------- 需求 3：版本快照 ----------
+  function scheduleSnapshot() {
+    if (snapshotTimer) clearTimeout(snapshotTimer);
+    snapshotTimer = setTimeout(function () { snapshotNow("编辑快照"); }, SNAPSHOT_DEBOUNCE_MS);
+  }
+  function snapshotNow(label, force) {
+    var res = NL.pushVersion(db.versions, db.entries, { label: label || "自动快照" }, { cap: MAX_VERSIONS, force: !!force });
+    if (res.dropped) showBanner("提示：版本数已达上限 " + MAX_VERSIONS + "，已丢弃最旧的 " + res.dropped + " 个快照历史。", false);
+    if (res.added) {
+      db.versions = res.versions;
+      save();
+      renderHistory();
+    }
+    return res;
+  }
+
+  // ---------- 弹框（Promise，用于所有危险操作的确认 / 多选） ----------
+  function askDialog(opts) {
+    return new Promise(function (resolve) {
+      var overlay = document.createElement("div");
+      overlay.className = "modal-overlay";
+      var box = document.createElement("div");
+      box.className = "modal";
+
+      var h = document.createElement("h3"); h.textContent = opts.title || "确认";
+      box.appendChild(h);
+      if (opts.message) { var p = document.createElement("div"); p.className = "modal-msg"; p.textContent = opts.message; box.appendChild(p); }
+      if (opts.preview !== undefined) { var pre = document.createElement("pre"); pre.className = "modal-pre"; pre.textContent = opts.preview; box.appendChild(pre); }
+
+      var bar = document.createElement("div"); bar.className = "modal-btns";
+      (opts.buttons || [{ label: "确定", value: "ok" }]).forEach(function (b) {
+        var btn = document.createElement("button");
+        btn.className = "btn" + (b.danger ? " danger" : "") + (b.primary ? " primary" : "");
+        btn.textContent = b.label;
+        btn.onclick = function () { close(b.value); };
+        bar.appendChild(btn);
+      });
+      box.appendChild(bar);
+      overlay.appendChild(box);
+      document.body.appendChild(overlay);
+
+      function onKey(ev) { if (ev.key === "Escape") close(null); }
+      function close(val) {
+        if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+        document.removeEventListener("keydown", onKey);
+        resolve(val);
+      }
+      document.addEventListener("keydown", onKey);
+      overlay.addEventListener("click", function (ev) { if (ev.target === overlay) close(null); });
+    });
+  }
+
+  // ---------- 需求 5：回滚（先确认 + 先备份，绝不静默覆盖） ----------
+  function rollbackTo(vid) {
+    var v = findVersion(vid);
+    if (!v) return;
+    askDialog({
+      title: "回滚版本",
+      message: "回滚会用该版本（" + v.ts + "）的内容替换当前全部条目。\n回滚前会自动把当前状态备份为一个新版本，可再次从历史恢复。确定回滚吗？",
+      buttons: [{ label: "确定回滚", value: "yes", danger: true }, { label: "取消", value: "no" }]
+    }).then(function (r) {
+      if (r !== "yes") return;
+      snapshotNow("回滚前自动备份", true);                       // ★ 先备份当前，再覆盖
+      db.entries = v.data.map(function (e) { return NL.normalizeEntry(e); });
+      db.activeId = db.entries[0] ? db.entries[0].id : null;
+      save();
+      renderAll();
+      setStatus(true);
+    });
+  }
+
+  function viewVersion(vid) {
+    var v = findVersion(vid);
+    if (!v) return;
+    var preview = (v.data || []).map(function (e, i) {
+      return (i + 1) + ". 备注:" + (e.note || "") + " ｜ 姓名:" + (e.name || "") + " ｜ 内容:" + (e.content || "");
+    }).join("\n") || "（空）";
+    askDialog({
+      title: "版本预览 · " + v.ts,
+      message: "标签：" + v.label + "　条目数：" + v.count,
+      preview: preview,
+      buttons: [{ label: "回滚到此版本", value: "rollback", danger: true }, { label: "关闭", value: "close" }]
+    }).then(function (r) { if (r === "rollback") rollbackTo(vid); });
+  }
+
+  // ---------- 需求 5：清空（先确认 + 先备份） ----------
+  function clearAll() {
+    if (db.entries.length === 0) { askDialog({ title: "清空", message: "当前没有条目。", buttons: [{ label: "知道了", value: "ok" }] }); return; }
+    askDialog({
+      title: "清空全部条目",
+      message: "确定清空全部条目吗？\n清空前会自动把当前数据备份为一个版本（保留在历史里），可随时回滚恢复。",
+      buttons: [{ label: "确定清空", value: "yes", danger: true }, { label: "取消", value: "no" }]
+    }).then(function (r) {
+      if (r !== "yes") return;
+      snapshotNow("清空前自动备份", true);                        // ★ 先备份，再清空
+      db.entries = [];
+      db.activeId = null;
+      save();
+      renderAll();
+      setStatus(true);
+    });
+  }
+
+  function deleteEntry(id) {
+    var e = findEntry(id);
+    if (!e) return;
+    askDialog({
+      title: "删除条目",
+      message: "确定删除【" + entryTitle(e) + "】吗？\n删除前会自动备份为一个版本，可从历史恢复。",
+      buttons: [{ label: "删除", value: "yes", danger: true }, { label: "取消", value: "no" }]
+    }).then(function (r) {
+      if (r !== "yes") return;
+      snapshotNow("删除前自动备份", true);                        // ★ 先备份
+      db.entries = db.entries.filter(function (x) { return x.id !== id; });
+      if (db.activeId === id) db.activeId = db.entries[0] ? db.entries[0].id : null;
+      save();
+      renderAll();
+    });
+  }
+
+  function newEntry() {
+    var e = { id: newId(), note: "", name: "", tag: "", content: "", created: NL.nowIso(), updated: NL.nowIso() };
+    db.entries.push(e);
+    db.activeId = e.id;
+    save();
+    renderAll();
+    var f = $("f-note"); if (f) f.focus();
+  }
+
+  // ---------- v0.1：Ctrl/Cmd+Enter 快速提交（等价于点【＋ 新建条目】） ----------
+  function submitEntry() {
+    if (snapshotTimer) { clearTimeout(snapshotTimer); snapshotTimer = null; }
+    snapshotNow("提交快照");     // 先把当前输入固化为一个版本快照
+    newEntry();                  // 再新建下一条（与点击【＋ 新建条目】一致）
+  }
+
+  function selectEntry(id) {
+    db.activeId = id;
+    save();
+    renderForm();
+    renderEntryList();
+  }
+
+  // ---------- 需求 4：导出（Blob + a[download]，全程离线） ----------
+  function stamp() { return NL.nowIso().replace(/[:T]/g, "-"); }
+  function download(filename, content, mime) {
+    var blob = new Blob([content], { type: mime + ";charset=utf-8" });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement("a");
+    a.href = url; a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(function () { URL.revokeObjectURL(url); if (a.parentNode) a.parentNode.removeChild(a); }, 0);
+  }
+  function exportJson() {
+    var payload = { app: "neverlose", version: APP_VERSION, exportedAt: NL.nowIso(), entries: db.entries, versions: db.versions };
+    download("neverlose-" + stamp() + ".json", JSON.stringify(payload, null, 2), "application/json");
+  }
+  function exportCsv() {
+    var csv = "\uFEFF" + NL.entriesToCsv(db.entries);      // BOM 便于 Excel 正确识别中文
+    download("neverlose-" + stamp() + ".csv", csv, "text/csv");
+  }
+  function exportMarkdown() {
+    download("neverlose-" + stamp() + ".md", NL.entriesToMarkdown(db.entries), "text/markdown");
+  }
+
+  // ---------- 导入（先确认，绝不静默覆盖） ----------
+  function doImport(text) {
+    var res = NL.parseImport(text);
+    if (!res.ok) { askDialog({ title: "导入失败", message: res.error, buttons: [{ label: "知道了", value: "ok" }] }); return; }
+    var imp = res.entries;
+    askDialog({
+      title: "导入数据",
+      message: "检测到 " + imp.length + " 条数据。请选择导入方式：\n· 追加合并：保留现有数据，新数据追加在后面。\n· 替换全部：用导入数据替换现有条目（替换前会自动备份当前数据为版本）。",
+      buttons: [
+        { label: "追加合并", value: "append", primary: true },
+        { label: "替换全部", value: "replace", danger: true },
+        { label: "取消", value: "cancel" }
+      ]
+    }).then(function (mode) {
+      if (mode === "append") {
+        var added = imp.map(function (e) { var n = NL.normalizeEntry(e); n.id = newId(); return n; });  // 重新分配 id，杜绝碰撞覆盖
+        db.entries = db.entries.concat(added);
+        if (!db.activeId) db.activeId = db.entries[0] ? db.entries[0].id : null;
+        save(); renderAll(); snapshotNow("导入(追加)");
+      } else if (mode === "replace") {
+        snapshotNow("导入替换前自动备份", true);                  // ★ 先备份，再替换
+        db.entries = imp.map(function (e) { return NL.normalizeEntry(e); });
+        db.activeId = db.entries[0] ? db.entries[0].id : null;
+        save(); renderAll(); snapshotNow("导入(替换)");
+      }
+    });
+  }
+  function handleFile(file) {
+    var reader = new FileReader();                          // 本地读取，无网络
+    reader.onload = function () { doImport(String(reader.result)); };
+    reader.onerror = function () { askDialog({ title: "读取失败", message: "无法读取所选文件。", buttons: [{ label: "知道了", value: "ok" }] }); };
+    reader.readAsText(file, "utf-8");
+  }
+
+  // ---------- 渲染 ----------
+  function renderAll() { renderEntryList(); renderForm(); renderHistory(); }
+
+  function renderEntryList() {
+    var box = $("entryList");
+    box.innerHTML = "";
+    var query = currentQuery();
+    var tagQ = currentTagQuery();
+    var sortMode = currentSortMode();
+    var visible = NL.sortEntries(NL.filterByTag(NL.filterEntries(db.entries, query), tagQ), sortMode);
+    $("entryCount").textContent = "共 " + db.entries.length + " 条";
+
+    var sc = $("searchCount");
+    if (sc) sc.textContent = ((query.trim() !== "") || (tagQ.trim() !== "")) ? ("匹配 " + visible.length + " / " + db.entries.length + " 条") : "";
+
+    if (!db.entries.length) {
+      var d = document.createElement("div"); d.className = "empty"; d.textContent = "暂无条目，点右上角【＋ 新建条目】或在中间直接输入。"; box.appendChild(d);
+      return;
+    }
+    if (!visible.length) {
+      var kw = query.trim() !== "" ? query : tagQ; var dn = document.createElement("div"); dn.className = "empty"; dn.textContent = "没有匹配「" + kw + "」的条目。可清空搜索/标签过滤后重试。"; box.appendChild(dn);
+      return;
+    }
+    visible.forEach(function (e) {
+      var it = document.createElement("div");
+      it.className = "item" + (e.id === db.activeId ? " active" : "");
+      var t = document.createElement("div"); t.className = "t"; t.textContent = entryTitle(e);
+      if (e.tag && String(e.tag).trim()) { var bg = document.createElement("span"); bg.className = "badge"; bg.textContent = String(e.tag).trim(); t.appendChild(bg); }
+      var s = document.createElement("div"); s.className = "s"; s.textContent = entrySub(e);
+      var row = document.createElement("div"); row.className = "row";
+      var del = document.createElement("button"); del.className = "btn small danger"; del.textContent = "删除";
+      del.onclick = function (ev) { ev.stopPropagation(); deleteEntry(e.id); };
+      row.appendChild(del);
+      it.appendChild(t); it.appendChild(s); it.appendChild(row);
+      it.onclick = function () { selectEntry(e.id); };
+      box.appendChild(it);
+    });
+  }
+
+  function renderForm() {
+    var e = getActive();
+    $("f-note").value = e ? (e.note || "") : "";
+    $("f-name").value = e ? (e.name || "") : "";
+    $("f-tag").value = e ? (e.tag || "") : "";
+    $("f-content").value = e ? (e.content || "") : "";
+    renderEntryMeta();
+  }
+  function renderEntryMeta() { /* 占位：如需展示活动条目元信息可扩展 */ }
+
+  function renderHistory() {
+    var box = $("historyList");
+    box.innerHTML = "";
+    $("verCount").textContent = "共 " + db.versions.length + " 个";
+    if (!db.versions.length) {
+      var d = document.createElement("div"); d.className = "empty"; d.textContent = "暂无历史版本。开始输入后会自动生成快照。"; box.appendChild(d);
+      return;
+    }
+    for (var i = db.versions.length - 1; i >= 0; i--) {   // 最新的在最上面
+      (function (v) {
+        var el = document.createElement("div"); el.className = "ver";
+        var ts = document.createElement("div"); ts.className = "ts"; ts.textContent = v.ts;
+        var meta = document.createElement("div"); meta.className = "meta"; meta.textContent = v.label + " · " + v.count + " 条";
+        var row = document.createElement("div"); row.className = "row";
+        var bView = document.createElement("button"); bView.className = "btn small"; bView.textContent = "查看";
+        bView.onclick = function () { viewVersion(v.id); };
+        var bBack = document.createElement("button"); bBack.className = "btn small danger"; bBack.textContent = "回滚";
+        bBack.onclick = function () { rollbackTo(v.id); };
+        row.appendChild(bView); row.appendChild(bBack);
+        el.appendChild(ts); el.appendChild(meta); el.appendChild(row);
+        box.appendChild(el);
+      })(db.versions[i]);
+    }
+  }
+
+  // ---------- 绑定事件 ----------
+  function bind() {
+    $("f-note").addEventListener("input", function () { onFieldInput("note", this.value); });     // 需求 2
+    $("f-name").addEventListener("input", function () { onFieldInput("name", this.value); });     // 需求 2
+    $("f-content").addEventListener("input", function () { onFieldInput("content", this.value); }); // 需求 2
+    $("f-tag").addEventListener("input", function () { onFieldInput("tag", this.value); }); // v0.2
+    // 失焦立即固化一个版本（不必等去抖）
+    ["f-note", "f-name", "f-content", "f-tag"].forEach(function (id) {
+      $(id).addEventListener("blur", function () { if (snapshotTimer) { clearTimeout(snapshotTimer); snapshotTimer = null; } snapshotNow("编辑快照"); });
+    });
+    $("btnNew").onclick = newEntry;
+    $("btnExportJson").onclick = exportJson;
+    $("btnExportCsv").onclick = exportCsv;
+    $("btnClear").onclick = clearAll;
+    $("btnImport").onclick = function () { $("fileInput").value = ""; $("fileInput").click(); };
+    $("fileInput").addEventListener("change", function () { if (this.files && this.files[0]) handleFile(this.files[0]); });
+
+    // v0.1：搜索过滤（输入即过滤）
+    $("searchInput").addEventListener("input", renderEntryList);
+    $("btnClearSearch").onclick = function () { $("searchInput").value = ""; $("tagFilter").value = ""; renderEntryList(); $("searchInput").focus(); };
+    $("tagFilter").addEventListener("input", renderEntryList);
+    $("sortSelect").addEventListener("change", renderEntryList);
+    $("btnExportMd").onclick = exportMarkdown;
+
+    // v0.1：存储告警可关闭
+    $("btnDismissStorage").onclick = function () { storageAlertDismissed = true; updateStorageStatus(); };
+
+    // v0.1：任意输入框内 Ctrl/Cmd+Enter 快速提交并新建
+    ["f-note", "f-name", "f-content", "f-tag", "searchInput"].forEach(function (id) {
+      var el = $(id);
+      if (!el) return;
+      el.addEventListener("keydown", function (ev) {
+        if (NL.isSubmitShortcut(ev)) { ev.preventDefault(); submitEntry(); }
+      });
+    });
+
+    // 页面关闭/刷新前，把待写入的快照立刻落盘（输入本身已实时保存）
+    window.addEventListener("beforeunload", function () { if (snapshotTimer) { clearTimeout(snapshotTimer); snapshotNow("离开前快照"); } });
+  }
+
+  // ---------- 启动 ----------
+  load();
+  bind();
+  renderAll();
+  setStatus(true);
+})();
+</script>
+</body>
+</html>
