@@ -41,3 +41,8 @@ c59955ccabf253a7e7eb97eecc443e7248ba6229b0d2d1b7ca263a64db9d18b6  covers/bundle-
 ## License
 
 MIT — see `LICENSE`.
+
+## Support
+
+If these tools save you time, you can support their maintenance at
+<https://ko-fi.com/colome>. The tools stay free and fully offline either way.
