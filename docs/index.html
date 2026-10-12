@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Offline Microtools — 离线小工具（无需安装、无需联网）</title>
-<meta name="description" content="两个单文件、完全离线的浏览器小工具：NeverLose（收集/整理/导出）与 Recall（SM-2 记忆卡）。另有 32 枚离线 UI 图标包。无账号、无埋点、无网络请求。">
+<meta name="description" content="两个单文件、完全离线的浏览器小工具：NeverLose（收集/整理/导出）与 Recall（SM-2 记忆卡）。可直接在浏览器里试用，也可下载 zip 离线使用。另有 32 枚离线 UI 图标包。无账号、无埋点、无网络请求。">
 <style>
 :root{--bg:#0f1115;--fg:#e8eaf0;--dim:#9aa3b2;--line:#232833;--card:#161a21;--acc:#7cc4ff}
 *{box-sizing:border-box}
@@ -22,6 +22,7 @@ ul{color:var(--dim);margin:8px 0 0;padding-left:20px}
 li{margin:3px 0}
 code{background:#0b0d11;border:1px solid var(--line);border-radius:5px;padding:1px 6px;font-size:13px}
 .btn{display:inline-block;margin:10px 10px 0 0;padding:9px 16px;border:1px solid var(--line);border-radius:8px;background:#1b2130}
+.btn.primary{background:#22405e;border-color:#3a6b96}
 footer{margin-top:44px;border-top:1px solid var(--line);padding-top:16px;font-size:13px;color:var(--dim)}
 </style>
 </head>
@@ -31,6 +32,12 @@ footer{margin-top:44px;border-top:1px solid var(--line);padding-top:16px;font-si
 <h1>Offline Microtools</h1>
 <p>单文件、完全离线的浏览器小工具 —— 打开即用，不装软件、不注册、不联网。所有数据只存在你自己的浏览器里（localStorage / 导出文件）。</p>
 <p><span class="tag">零网络请求</span><span class="tag">零依赖</span><span class="tag">MIT</span><span class="tag">数据不出本机</span></p>
+
+<h2>立即试用（不用下载）</h2>
+<p>点下面任一按钮即可在浏览器标签页里直接运行（文件来自 CDN，代码与发布包逐字节相同、可按 SHA-256 自行核对；运行时不再有任何网络请求，数据不出本机）：</p>
+<a class="btn primary" href="https://cdn.jsdelivr.net/gh/SourceAn/offline-microtools@v0.2.0/neverlose.html">试用 NeverLose</a>
+<a class="btn primary" href="https://cdn.jsdelivr.net/gh/SourceAn/offline-microtools@v0.2.0/recall.html">试用 Recall</a>
+<a class="btn" href="https://sourcean.github.io/offline-ui-icons/">看图标集（32 枚）</a>
 
 <h2>工具</h2>
 
@@ -58,16 +65,20 @@ footer{margin-top:44px;border-top:1px solid var(--line);padding-top:16px;font-si
 <div class="card">
 <h3>Offline UI Icons — 32 枚离线 UI 图标</h3>
 <p>24×24 网格的线性图标集，纯 SVG（<code>currentColor</code>），零依赖、零网络；另附单文件 JS 版本。</p>
+<p><a href="https://sourcean.github.io/offline-ui-icons/">在线看图集</a></p>
 </div>
 
-<h2>下载</h2>
+<h2>下载（离线使用 / 备用）</h2>
 <p>成品都在 GitHub Releases 里，公开仓库、无需登录即可下载：</p>
-<a class="btn" href="https://github.com/SourceAn/offline-microtools/releases/latest">NeverLose + Recall（zip）</a>
-<a class="btn" href="https://github.com/SourceAn/offline-ui-icons/releases/latest">Offline UI Icons（zip）</a>
+<a class="btn" href="https://github.com/SourceAn/offline-microtools/releases/latest/download/neverlose-v0.2.zip">NeverLose zip</a>
+<a class="btn" href="https://github.com/SourceAn/offline-microtools/releases/latest/download/recall-v0.1.zip">Recall zip</a>
+<a class="btn" href="https://github.com/SourceAn/offline-ui-icons/releases/latest/download/offline-ui-icons-v0.1.zip">图标包 zip</a>
+<a class="btn" href="https://github.com/SourceAn/offline-microtools/releases/latest">全部发布（Releases）</a>
 <p>每个发布包都附带 <code>SHA256SUMS</code>，下载后可自行校验；每个 zip 内的单文件工具双击即可在浏览器里离线运行。</p>
 
 <h2>自证没坏</h2>
-<p>不放心二进制？每个 zip 附哈希清单，仓库里还有一条命令跑完全部校验（哈希、单元测试、结构检查、离线/身份扫描）。也可以直接打开仓库里的 <code>QUICKSTART.html</code>：它在本地用浏览器 crypto 重算内嵌文件的 SHA-256 并逐项比对。</p>
+<p>不放心二进制？每个 zip 附哈希清单，仓库里还有一条命令跑完全部校验（哈希、单元测试、结构检查、离线/身份扫描）。也可以直接打开这个单文件控制台：它在本地用浏览器 crypto 重算内嵌文件的 SHA-256 并逐项比对。</p>
+<a class="btn" href="https://sourcean.github.io/offline-microtools/quickstart.html">打开单文件控制台（内含全部成品）</a>
 
 <h2>支持</h2>
 <p>如果这些小工具有用，可以在这里支持后续开发：</p>
@@ -75,7 +86,8 @@ footer{margin-top:44px;border-top:1px solid var(--line);padding-top:16px;font-si
 
 <footer>
 本项目采用 MIT 许可证。仓库内不含任何统计、追踪或外部请求代码。<br>
-Offline Microtools · GitHub Pages 静态页面（无 Cookie、无脚本分析）
+Offline Microtools · GitHub Pages 静态页面（无 Cookie、无脚本分析）<br>
+本页所有链接均指向公开可下载的成品；在线试用版的字节与发布包逐字节相同。
 </footer>
 
 </div>
