@@ -1,0 +1,795 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>🧠 Recall · 永不丢数据的本地记忆卡 v0.1</title>
+<style>
+  :root{
+    --bg:#0f1216; --panel:#171c23; --panel2:#1e242d; --line:#2a313c;
+    --txt:#e6ebf2; --dim:#98a3b3; --accent:#5aa9ff; --accent2:#2d6fe0;
+    --ok:#3ecf8e; --warn:#ffb454; --danger:#ff5d5d;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{
+    background:var(--bg); color:var(--txt);
+    font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+    display:flex; flex-direction:column; min-height:100vh;
+  }
+  h1{font-size:18px;margin:0}
+  h1 .ver{color:var(--accent);font-size:13px;font-weight:600}
+  button{
+    background:var(--panel2); color:var(--txt); border:1px solid var(--line);
+    border-radius:8px; padding:7px 11px; cursor:pointer; font-size:13px;
+  }
+  button:hover{border-color:var(--accent)}
+  button.primary{background:var(--accent2);border-color:var(--accent2);color:#fff}
+  button.ghost{background:transparent}
+  input,textarea,select{
+    background:var(--panel); color:var(--txt); border:1px solid var(--line);
+    border-radius:8px; padding:7px 9px; font-size:13px; width:100%;
+  }
+  input:focus,textarea:focus,select:focus{outline:none;border-color:var(--accent)}
+  textarea{min-height:74px;resize:vertical;font-family:inherit}
+  header{padding:12px 16px;border-bottom:1px solid var(--line);background:var(--panel)}
+  header .meta{color:var(--dim);font-size:12px;margin-top:2px}
+  header .toolbar{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+  main{flex:1;display:flex;gap:0;min-height:0}
+  .col{padding:14px;overflow:auto}
+  .left{width:290px;border-right:1px solid var(--line);background:var(--panel)}
+  .mid{flex:1;min-width:280px;border-right:1px solid var(--line)}
+  .right{width:300px;background:var(--panel)}
+  label{display:block;color:var(--dim);font-size:12px;margin:10px 0 4px}
+  .row{display:flex;gap:8px;align-items:center}
+  .row>*{flex:1}
+  ul#cardList{list-style:none;margin:8px 0 0;padding:0}
+  ul#cardList li{
+    padding:8px 9px;border:1px solid var(--line);border-radius:8px;margin-bottom:6px;
+    cursor:pointer;background:var(--panel2);
+  }
+  ul#cardList li.active{border-color:var(--accent)}
+  ul#cardList li .front{font-weight:600}
+  ul#cardList li .sub{color:var(--dim);font-size:12px;margin-top:2px}
+  .tag{display:inline-block;background:#243042;color:var(--accent);border-radius:999px;padding:1px 8px;font-size:11px;margin-left:6px}
+  .due-pill{color:var(--warn);font-size:11px;margin-left:6px}
+  .count{color:var(--dim);font-size:12px;margin:8px 0}
+  footer{padding:8px 16px;border-top:1px solid var(--line);color:var(--dim);font-size:12px;display:flex;gap:10px;justify-content:space-between}
+  .banner{background:var(--danger);color:#fff;padding:8px 16px;font-size:13px}
+  .alert{
+    background:#3a2a12;border-bottom:1px solid var(--warn);color:var(--warn);
+    padding:8px 16px;font-size:13px;display:flex;justify-content:space-between;align-items:center;gap:10px;
+  }
+  .alert.danger{background:#3a1515;border-color:var(--danger);color:#ffb3b3}
+  .hidden{display:none !important}
+  #reviewCardFront,#reviewCardBack{
+    background:var(--panel2);border:1px solid var(--line);border-radius:10px;
+    padding:14px;min-height:60px;margin:8px 0;white-space:pre-wrap;word-break:break-word;
+  }
+  #reviewCardBack{border-color:var(--accent)}
+  .grades{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}
+  .g0{background:#40301a;border-color:var(--warn)} .g1{background:#3a3a3a}
+  .g2{background:#1e3a2a;border-color:var(--ok)} .g3{background:#1e2f4a;border-color:var(--accent)}
+  .hint{color:var(--dim);font-size:12px;margin-top:6px}
+  kbd{background:var(--panel2);border:1px solid var(--line);border-radius:5px;padding:1px 5px;font-size:11px}
+  #reviewProgress{color:var(--dim);font-size:12px}
+  .empty{color:var(--dim);font-size:13px;padding:10px 0}
+</style>
+</head>
+<body>
+  <div id="persistBanner" class="banner hidden"></div>
+  <div id="storageAlert" class="alert hidden">
+    <span id="storageAlertMsg"></span>
+    <button id="btnDismissStorage" class="ghost">知道了</button>
+  </div>
+
+  <header>
+    <h1>🧠 Recall <span class="ver">v0.1</span></h1>
+    <div class="meta">本机记忆卡 · 完全离线 · 数据只存在这台设备
+      <span id="appVersion">v0.1 · 本地记忆卡</span></div>
+    <div class="toolbar">
+      <button id="btnNewCard" class="primary">＋ 新建卡片</button>
+      <button id="btnExportJson">导出 JSON</button>
+      <button id="btnExportCsv">导出 CSV</button>
+      <button id="btnImport">导入 JSON</button>
+      <input id="fileInput" type="file" accept=".json,application/json" class="hidden">
+      <button id="btnDeleteAll" class="ghost">清空全部</button>
+    </div>
+  </header>
+
+  <main>
+    <aside class="col left">
+      <div class="row">
+        <input id="searchInput" placeholder="搜索正面 / 背面 / 标签">
+        <button id="btnClearSearch" class="ghost" style="flex:0 0 auto">✕ 清空</button>
+      </div>
+      <div id="searchCount" class="count"></div>
+      <label>按牌组筛选</label>
+      <select id="deckSelect"></select>
+      <div class="row" style="margin-top:8px">
+        <button id="btnNewDeck" class="ghost">＋ 新建牌组</button>
+      </div>
+      <div id="cardCount" class="count"></div>
+      <ul id="cardList"></ul>
+    </aside>
+
+    <section class="col mid">
+      <label>牌组</label>
+      <select id="f-deck"></select>
+      <label>正面（问题）</label>
+      <textarea id="f-front" placeholder="例如：SM-2 里 ease factor 的最小值是多少？"></textarea>
+      <label>背面（答案）</label>
+      <textarea id="f-back" placeholder="例如：1.3"></textarea>
+      <label>标签（可选）</label>
+      <input id="f-tag" placeholder="例如：算法 / 英语 / 客户">
+      <div class="row" style="margin-top:12px">
+        <button id="btnSaveCard" class="primary">保存卡片</button>
+        <button id="btnDeleteCard" class="ghost">删除卡片</button>
+      </div>
+      <div id="editorHint" class="hint">新建卡片时：填写正面与背面后点【保存卡片】。选择左侧卡片可编辑。</div>
+    </section>
+
+    <section class="col right">
+      <div id="dueCount" class="count"></div>
+      <button id="btnReview" class="primary" style="width:100%">开始复习</button>
+
+      <div id="reviewArea" class="hidden" style="margin-top:12px">
+        <div id="reviewProgress"></div>
+        <div id="reviewCardFront"></div>
+        <div id="reviewCardBack" class="hidden"></div>
+        <button id="btnReveal" style="width:100%;margin-top:8px">显示答案（按 <kbd>空格</kbd>）</button>
+        <div id="gradeButtons" class="grades hidden">
+          <button class="g0" data-grade="0">0 重来 · 1</button>
+          <button class="g1" data-grade="1">1 困难 · 2</button>
+          <button class="g2" data-grade="2">2 良好 · 3</button>
+          <button class="g3" data-grade="3">3 简单 · 4</button>
+        </div>
+        <div id="reviewEmpty" class="empty hidden">没有到期的卡片了 🎉</div>
+      </div>
+      <div class="hint">复习快捷键：<kbd>空格</kbd> 显示答案，<kbd>1</kbd>–<kbd>4</kbd> 打分（对应上方 4 档）。</div>
+    </section>
+  </main>
+
+  <footer>
+    <span id="storageStatus">存储占用 —</span>
+    <span>Recall v0.1 · 单文件离线</span>
+  </footer>
+
+<script>
+/* RECALL-CORE-START */
+// ===== Recall 纯核心（无 DOM、无副作用、可单测）=====
+var APP_VERSION = "v0.1";
+var STORAGE_KEY = "recall.v0.db";
+var STORAGE_LIMIT = 5 * 1024 * 1024;      // localStorage 常见上限（估算）
+var STORAGE_WARN_PERCENT = 80;
+var STORAGE_DANGER_PERCENT = 95;
+var GRADE_QUALITY = [0, 3, 4, 5];         // 0 重来 / 1 困难 / 2 良好 / 3 简单 -> SM-2 q 值
+
+function genId() {
+  return "c" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+}
+
+function recallNow() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function nowIso() {
+  return new Date().toISOString();
+}
+
+// 取 'YYYY-MM-DD' 形式；非法输入返回 ''
+function toDateStr(iso) {
+  if (iso === null || iso === undefined || iso === "") return "";
+  var s = String(iso).trim();
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
+  var d = new Date(s);
+  if (isNaN(d.getTime())) return "";
+  return d.toISOString().slice(0, 10);
+}
+
+// 日期加天数（UTC，避免时区漂移）
+function addDays(dateStr, days) {
+  var base = toDateStr(dateStr);
+  if (!base) base = recallNow();
+  var n = Number(days);
+  if (!isFinite(n)) n = 0;
+  var d = new Date(base + "T00:00:00Z");
+  d.setUTCDate(d.getUTCDate() + Math.round(n));
+  return d.toISOString().slice(0, 10);
+}
+
+// 把任意打分收敛到整数 0..3
+function clampGrade(grade) {
+  var n = Number(grade);
+  if (!isFinite(n)) return 0;
+  n = Math.round(n);
+  if (n < 0) return 0;
+  if (n > 3) return 3;
+  return n;
+}
+
+// SM-2 调度（Wikipedia 规范伪码：正确则推进，错误则重置；EF 每轮更新并下限 1.3）
+// state: { ef, interval, reps }；grade: 0..3；nowIso: 基准日期（可省略）
+// 返回全新对象，绝不修改入参。
+function schedule(state, grade, nowIsoStr) {
+  var s = state || {};
+  var ef = (typeof s.ef === "number" && isFinite(s.ef)) ? s.ef : 2.5;
+  var reps = (typeof s.reps === "number" && isFinite(s.reps) && s.reps > 0) ? Math.floor(s.reps) : 0;
+  var interval = (typeof s.interval === "number" && isFinite(s.interval) && s.interval > 0) ? Math.round(s.interval) : 0;
+  var g = clampGrade(grade);
+  var q = GRADE_QUALITY[g];
+
+  if (q >= 3) {
+    if (reps === 0) interval = 1;
+    else if (reps === 1) interval = 6;
+    else interval = Math.round(interval * ef);
+    reps = reps + 1;
+  } else {
+    reps = 0;
+    interval = 1;
+  }
+
+  ef = ef + (0.1 - (5 - q) * (0.08 + (5 - q) * 0.02));
+  if (ef < 1.3) ef = 1.3;
+  ef = Math.round(ef * 1000) / 1000;
+
+  var today = toDateStr(nowIsoStr) || recallNow();
+  return {
+    ef: ef,
+    interval: interval,
+    reps: reps,
+    due: addDays(today, interval),
+    lastGrade: g,
+    lastReviewed: today
+  };
+}
+
+// 卡片今天是否到期（无 due 视为新卡，立即到期）
+function isDueToday(card, todayStr) {
+  if (!card || typeof card !== "object") return false;
+  var t = toDateStr(todayStr) || recallNow();
+  var due = toDateStr(card.due);
+  if (!due) return true;
+  return due <= t;
+}
+
+// 到期卡片列表（返回新数组，不修改入参）
+function dueList(cards, todayStr) {
+  if (!Array.isArray(cards)) return [];
+  var t = toDateStr(todayStr) || recallNow();
+  var out = [];
+  for (var i = 0; i < cards.length; i++) {
+    if (isDueToday(cards[i], t)) out.push(cards[i]);
+  }
+  return out;
+}
+
+// 按牌组筛选（deckId 为空/"__all__" 时返回全部副本）
+function filterByDeck(cards, deckId) {
+  if (!Array.isArray(cards)) return [];
+  if (!deckId || deckId === "__all__") return cards.slice();
+  return cards.filter(function (c) { return c && c.deckId === deckId; });
+}
+
+// 大小写不敏感地匹配 正面/背面/标签（空查询返回全部副本）
+function filterCards(cards, query) {
+  if (!Array.isArray(cards)) return [];
+  var q = (query === null || query === undefined ? "" : String(query)).trim().toLowerCase();
+  if (!q) return cards.slice();
+  var out = [];
+  for (var i = 0; i < cards.length; i++) {
+    var c = cards[i] || {};
+    var hay = (String(c.front || "") + "\n" + String(c.back || "") + "\n" + String(c.tag || "")).toLowerCase();
+    if (hay.indexOf(q) !== -1) out.push(c);
+  }
+  return out;
+}
+
+// CSV 单元格转义：null/undefined -> ''；含 , " \n \r 则加引号并翻倍内层引号
+function csvEscape(v) {
+  if (v === null || v === undefined) return "";
+  var s = String(v);
+  if (/[",\n\r]/.test(s)) {
+    return '"' + s.replace(/"/g, '""') + '"';
+  }
+  return s;
+}
+
+// 卡片数组 -> CSV 文本（不含 BOM；表头固定）
+function cardsToCsv(cards) {
+  var header = ["front", "back", "tag", "deck", "due", "interval", "reps", "ef"].join(",");
+  if (!Array.isArray(cards)) return header;
+  var lines = [header];
+  for (var i = 0; i < cards.length; i++) {
+    var c = cards[i] || {};
+    lines.push([
+      csvEscape(c.front), csvEscape(c.back), csvEscape(c.tag),
+      csvEscape(c.deckId), csvEscape(c.due), csvEscape(c.interval),
+      csvEscape(c.reps), csvEscape(c.ef)
+    ].join(","));
+  }
+  return lines.join("\n");
+}
+
+// 归一化单张卡片（不修改入参；补默认值）
+function normalizeCard(c, deckId) {
+  var src = (c && typeof c === "object") ? c : {};
+  var t = recallNow();
+  return {
+    id: (typeof src.id === "string" && src.id) ? src.id : genId(),
+    deckId: (typeof src.deckId === "string" && src.deckId) ? src.deckId : (deckId || "default"),
+    front: String(src.front === null || src.front === undefined ? "" : src.front),
+    back: String(src.back === null || src.back === undefined ? "" : src.back),
+    tag: String(src.tag === null || src.tag === undefined ? "" : src.tag),
+    ef: (typeof src.ef === "number" && isFinite(src.ef)) ? src.ef : 2.5,
+    interval: (typeof src.interval === "number" && isFinite(src.interval)) ? src.interval : 0,
+    reps: (typeof src.reps === "number" && isFinite(src.reps)) ? src.reps : 0,
+    due: (typeof src.due === "string") ? src.due : "",
+    lapses: (typeof src.lapses === "number" && isFinite(src.lapses)) ? src.lapses : 0,
+    created: (typeof src.created === "string" && src.created) ? src.created : t,
+    updated: (typeof src.updated === "string" && src.updated) ? src.updated : t
+  };
+}
+
+// 解析导入 JSON：接受 {cards:[...]} 或裸数组；拒绝任何格式错误
+// 返回 { ok:true, cards:[...] } 或 { ok:false, error:'...' }
+function parseImport(text) {
+  if (typeof text !== "string") return { ok: false, error: "输入不是文本" };
+  var raw = text.trim();
+  if (!raw) return { ok: false, error: "内容为空" };
+  var data;
+  try { data = JSON.parse(raw); }
+  catch (e) { return { ok: false, error: "JSON 解析失败" }; }
+
+  var cards;
+  if (Array.isArray(data)) cards = data;
+  else if (data && typeof data === "object" && Array.isArray(data.cards)) cards = data.cards;
+  else return { ok: false, error: "缺少 cards 数组" };
+
+  var clean = [];
+  for (var i = 0; i < cards.length; i++) {
+    var c = cards[i];
+    if (!c || typeof c !== "object" || Array.isArray(c)) {
+      return { ok: false, error: "第 " + (i + 1) + " 条不是对象" };
+    }
+    if (typeof c.front !== "string" || typeof c.back !== "string") {
+      return { ok: false, error: "第 " + (i + 1) + " 条缺少 front/back 文本" };
+    }
+    if (!c.front.trim()) {
+      return { ok: false, error: "第 " + (i + 1) + " 条 front 为空" };
+    }
+    clean.push(normalizeCard(c));
+  }
+  return { ok: true, cards: clean };
+}
+
+// UTF-8 字节数估算（纯函数）
+function estimateBytes(str) {
+  if (str === null || str === undefined) return 0;
+  var s = String(str);
+  var bytes = 0;
+  for (var i = 0; i < s.length; i++) {
+    var c = s.charCodeAt(i);
+    if (c < 0x80) bytes += 1;
+    else if (c < 0x800) bytes += 2;
+    else if (c >= 0xD800 && c <= 0xDBFF) { bytes += 4; i++; }
+    else bytes += 3;
+  }
+  return bytes;
+}
+
+// 存储占用状态：{bytes, limit, percent, level: ok|warn|danger}
+function storageStatus(bytes, limit) {
+  var lim = (typeof limit === "number" && isFinite(limit) && limit > 0) ? limit : STORAGE_LIMIT;
+  var b = (typeof bytes === "number" && isFinite(bytes) && bytes > 0) ? bytes : 0;
+  var percent = Math.round((b / lim) * 1000) / 10;
+  var level = "ok";
+  if (percent >= STORAGE_DANGER_PERCENT) level = "danger";
+  else if (percent >= STORAGE_WARN_PERCENT) level = "warn";
+  return { bytes: b, limit: lim, percent: percent, level: level };
+}
+
+var Recall = {
+  APP_VERSION: APP_VERSION,
+  STORAGE_KEY: STORAGE_KEY,
+  STORAGE_LIMIT: STORAGE_LIMIT,
+  STORAGE_WARN_PERCENT: STORAGE_WARN_PERCENT,
+  STORAGE_DANGER_PERCENT: STORAGE_DANGER_PERCENT,
+  GRADE_QUALITY: GRADE_QUALITY,
+  recallNow: recallNow,
+  nowIso: nowIso,
+  toDateStr: toDateStr,
+  addDays: addDays,
+  clampGrade: clampGrade,
+  schedule: schedule,
+  isDueToday: isDueToday,
+  dueList: dueList,
+  filterByDeck: filterByDeck,
+  filterCards: filterCards,
+  csvEscape: csvEscape,
+  cardsToCsv: cardsToCsv,
+  normalizeCard: normalizeCard,
+  parseImport: parseImport,
+  estimateBytes: estimateBytes,
+  storageStatus: storageStatus,
+  genId: genId
+};
+if (typeof window !== "undefined") { window.Recall = Recall; }
+if (typeof globalThis !== "undefined") { globalThis.Recall = Recall; }
+/* RECALL-CORE-END */
+</script>
+
+<script>
+// ===== 应用层（DOM / 持久化 / 交互）=====
+(function () {
+  "use strict";
+
+  var DB = null;            // 当前内存数据库
+  var lastGoodRaw = null;   // 最近一次成功写入的原始字符串（last-good 副本）
+  var editingId = null;     // 正在编辑的卡片 id
+  var currentDeckId = "__all__";
+  var reviewQueue = [];
+  var currentReview = null;
+  var persistedFlag = true;
+
+  var $ = function (id) { return document.getElementById(id); };
+  var esc = function (s) {
+    return String(s === null || s === undefined ? "" : s)
+      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  };
+
+  function defaultDb() {
+    return {
+      version: 1,
+      decks: [{ id: "default", name: "默认牌组", created: Recall.nowIso() }],
+      cards: []
+    };
+  }
+
+  function migrate(data) {
+    var db = defaultDb();
+    if (!data || typeof data !== "object") return db;
+    if (Array.isArray(data.decks) && data.decks.length) {
+      db.decks = data.decks.filter(function (d) { return d && typeof d.id === "string"; })
+        .map(function (d) { return { id: d.id, name: String(d.name || d.id), created: d.created || Recall.nowIso() }; });
+      if (!db.decks.length) db.decks = defaultDb().decks;
+    }
+    if (Array.isArray(data.cards)) {
+      db.cards = data.cards.map(function (c) { return Recall.normalizeCard(c); });
+    }
+    return db;
+  }
+
+  function load() {
+    var raw = null;
+    try { raw = localStorage.getItem(Recall.STORAGE_KEY); } catch (e) { raw = null; }
+    if (!raw) { DB = defaultDb(); lastGoodRaw = null; return; }
+    var parsed;
+    try { parsed = JSON.parse(raw); }
+    catch (e) {
+      // 坏的 JSON：不覆盖磁盘内容，用空库继续，明确告知用户
+      DB = defaultDb();
+      showPersistBanner("本地数据解析失败：已临时使用空数据库。磁盘上的原始内容未被覆盖，可自行备份后重试。");
+      return;
+    }
+    DB = migrate(parsed);
+    lastGoodRaw = raw;
+  }
+
+  // 关键：写入失败绝不覆盖好的数据
+  function save(db) {
+    var serialized;
+    try { serialized = JSON.stringify(db); }
+    catch (e) { showPersistBanner("保存失败：数据无法序列化，已放弃本次写入（原数据未动）。"); return false; }
+
+    var prev = lastGoodRaw;
+    try { prev = localStorage.getItem(Recall.STORAGE_KEY); } catch (e) {}
+
+    try {
+      localStorage.setItem(Recall.STORAGE_KEY, serialized);
+      var verify = localStorage.getItem(Recall.STORAGE_KEY);
+      if (verify !== serialized) throw new Error("write-verify-mismatch");
+      lastGoodRaw = serialized;
+      clearPersistBanner();
+      updateStorageStatus();
+      return true;
+    } catch (e) {
+      // 回滚到磁盘上的 last-good（若存在），保证好数据不被半截写入破坏
+      if (prev !== null) {
+        try { localStorage.setItem(Recall.STORAGE_KEY, prev); } catch (e2) {}
+      }
+      showPersistBanner("保存失败（可能是存储已满或隐私模式）。数据仍完整保留在内存中，且未覆盖磁盘上的上一份好数据；请先导出 JSON 备份。");
+      return false;
+    }
+  }
+
+  function showPersistBanner(msg) { persistedFlag = false; var b = $("persistBanner"); b.textContent = msg; b.classList.remove("hidden"); }
+  function clearPersistBanner() { persistedFlag = true; $("persistBanner").classList.add("hidden"); }
+
+  function updateStorageStatus() {
+    var raw = "";
+    try { raw = localStorage.getItem(Recall.STORAGE_KEY) || ""; } catch (e) { raw = ""; }
+    var st = Recall.storageStatus(Recall.estimateBytes(raw), Recall.STORAGE_LIMIT);
+    var mb = (st.limit / (1024 * 1024)).toFixed(2);
+    $("storageStatus").textContent = "存储占用 " + st.bytes + " B / " + mb + " MB（" + st.percent + "%）";
+    var alertBox = $("storageAlert");
+    if (st.level === "warn" || st.level === "danger") {
+      $("storageAlertMsg").textContent = st.level === "danger"
+        ? "⚠️ 存储占用已达 " + st.percent + "%（危险）：请立即导出 JSON 并清理旧卡片。"
+        : "⚠️ 存储占用已达 " + st.percent + "%，接近 5 MB 上限，建议导出 JSON 备份。";
+      alertBox.classList.toggle("danger", st.level === "danger");
+      if (!alertDismissed) alertBox.classList.remove("hidden");
+    } else {
+      alertBox.classList.add("hidden");
+    }
+  }
+  var alertDismissed = false;
+
+  function deckName(id) {
+    for (var i = 0; i < DB.decks.length; i++) if (DB.decks[i].id === id) return DB.decks[i].name;
+    return id;
+  }
+
+  function renderDeckSelects() {
+    var ds = $("deckSelect"), fd = $("f-deck");
+    var opts = ['<option value="__all__">全部牌组</option>'];
+    var fopts = [];
+    for (var i = 0; i < DB.decks.length; i++) {
+      var d = DB.decks[i];
+      opts.push('<option value="' + esc(d.id) + '">' + esc(d.name) + "</option>");
+      fopts.push('<option value="' + esc(d.id) + '">' + esc(d.name) + "</option>");
+    }
+    ds.innerHTML = opts.join("");
+    fd.innerHTML = fopts.join("");
+    ds.value = currentDeckId;
+    if (editingId) { var c = findCard(editingId); if (c) fd.value = c.deckId; }
+  }
+
+  function findCard(id) {
+    for (var i = 0; i < DB.cards.length; i++) if (DB.cards[i].id === id) return DB.cards[i];
+    return null;
+  }
+
+  function renderCardList() {
+    var q = $("searchInput").value;
+    var byDeck = Recall.filterByDeck(DB.cards, currentDeckId);
+    var shown = Recall.filterCards(byDeck, q);
+    var list = $("cardList");
+    var html = [];
+    for (var i = 0; i < shown.length; i++) {
+      var c = shown[i];
+      var dueTxt = c.due ? ("到期 " + c.due) : "新卡片";
+      var active = (c.id === editingId) ? ' class="active"' : "";
+      html.push(
+        "<li data-id=\"" + esc(c.id) + "\"" + active + ">" +
+        "<div class=\"front\">" + esc(c.front || "(空)") + "</div>" +
+        "<div class=\"sub\">" + esc(deckName(c.deckId)) +
+        (c.tag ? ('<span class="tag">' + esc(c.tag) + "</span>") : "") +
+        '<span class="due-pill">' + esc(dueTxt) + "</span></div></li>"
+      );
+    }
+    list.innerHTML = html.length ? html.join("") : '<div class="empty">没有匹配的卡片。</div>';
+    $("searchCount").textContent = q ? ("匹配 " + shown.length + " / " + DB.cards.length + " 张") : "";
+    $("cardCount").textContent = "共 " + DB.cards.length + " 张卡片 · 当前显示 " + shown.length + " 张";
+  }
+
+  function renderDueCount() {
+    var n = Recall.dueList(DB.cards, Recall.recallNow()).length;
+    $("dueCount").textContent = "今日到期：" + n + " 张";
+  }
+
+  function renderAll() {
+    renderDeckSelects();
+    renderCardList();
+    renderDueCount();
+    updateStorageStatus();
+  }
+
+  // ---- 编辑区 ----
+  function openEditor(card) {
+    editingId = card ? card.id : null;
+    $("f-front").value = card ? card.front : "";
+    $("f-back").value = card ? card.back : "";
+    $("f-tag").value = card ? card.tag : "";
+    $("f-deck").value = card ? card.deckId : (currentDeckId === "__all__" ? DB.decks[0].id : currentDeckId);
+    $("editorHint").textContent = card ? "编辑中：修改后点【保存卡片】。" : "新建卡片：填写正面与背面后点【保存卡片】。";
+    renderCardList();
+  }
+
+  function saveCard() {
+    var front = $("f-front").value.trim();
+    var back = $("f-back").value.trim();
+    var tag = $("f-tag").value.trim();
+    var deckId = $("f-deck").value;
+    if (!front) { alert("请先填写正面（问题）。"); return; }
+    if (!back) { alert("请先填写背面（答案）。"); return; }
+    if (editingId) {
+      var c = findCard(editingId);
+      if (!c) return;
+      c.front = front; c.back = back; c.tag = tag; c.deckId = deckId; c.updated = Recall.nowIso();
+    } else {
+      DB.cards.push(Recall.normalizeCard({ front: front, back: back, tag: tag, deckId: deckId }));
+    }
+    var ok = save(DB);
+    if (ok) { editingId = null; $("f-front").value = ""; $("f-back").value = ""; $("f-tag").value = ""; $("editorHint").textContent = "已保存。继续新建下一张，或点击左侧卡片编辑。"; }
+    renderAll();
+  }
+
+  function deleteCard() {
+    if (!editingId) { alert("请先在左侧选择一张卡片。"); return; }
+    if (!confirm("确定删除这张卡片？此操作不可撤销。")) return;
+    DB.cards = DB.cards.filter(function (c) { return c.id !== editingId; });
+    editingId = null;
+    save(DB);
+    $("f-front").value = ""; $("f-back").value = ""; $("f-tag").value = "";
+    renderAll();
+  }
+
+  function deleteAll() {
+    if (!confirm("确定清空全部卡片与牌组？此操作不可撤销，建议先导出 JSON 备份。")) return;
+    DB = defaultDb();
+    editingId = null;
+    save(DB);
+    renderAll();
+  }
+
+  // ---- 复习 ----
+  function startReview() {
+    reviewQueue = Recall.dueList(DB.cards, Recall.recallNow()).slice();
+    $("reviewArea").classList.remove("hidden");
+    nextReview();
+  }
+
+  function nextReview() {
+    if (!reviewQueue.length) {
+      $("reviewCardFront").classList.add("hidden");
+      $("reviewCardBack").classList.add("hidden");
+      $("btnReveal").classList.add("hidden");
+      $("gradeButtons").classList.add("hidden");
+      $("reviewEmpty").classList.remove("hidden");
+      $("reviewProgress").textContent = "";
+      currentReview = null;
+      return;
+    }
+    currentReview = reviewQueue[0];
+    $("reviewEmpty").classList.add("hidden");
+    $("reviewCardFront").classList.remove("hidden");
+    $("reviewCardFront").textContent = currentReview.front;
+    $("reviewCardBack").classList.add("hidden");
+    $("btnReveal").classList.remove("hidden");
+    $("gradeButtons").classList.add("hidden");
+    $("reviewProgress").textContent = "剩余 " + reviewQueue.length + " 张";
+  }
+
+  function revealAnswer() {
+    if (!currentReview) return;
+    $("reviewCardBack").textContent = currentReview.back;
+    $("reviewCardBack").classList.remove("hidden");
+    $("btnReveal").classList.add("hidden");
+    $("gradeButtons").classList.remove("hidden");
+  }
+
+  function gradeCard(g) {
+    if (!currentReview) return;
+    var idx = -1;
+    for (var i = 0; i < DB.cards.length; i++) if (DB.cards[i].id === currentReview.id) { idx = i; break; }
+    if (idx < 0) { reviewQueue.shift(); nextReview(); return; }
+    var next = Recall.schedule(DB.cards[idx], g, Recall.recallNow());
+    DB.cards[idx].ef = next.ef;
+    DB.cards[idx].interval = next.interval;
+    DB.cards[idx].reps = next.reps;
+    DB.cards[idx].due = next.due;
+    DB.cards[idx].lastGrade = next.lastGrade;
+    DB.cards[idx].updated = Recall.nowIso();
+    if (Recall.clampGrade(g) === 0) DB.cards[idx].lapses = (DB.cards[idx].lapses || 0) + 1;
+    save(DB);
+    reviewQueue = reviewQueue.filter(function (c) { return c.id !== currentReview.id; });
+    renderAll();
+    nextReview();
+  }
+
+  // ---- 导出 / 导入 ----
+  function download(filename, text, mime) {
+    var blob = new Blob([text], { type: mime || "application/octet-stream" });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement("a");
+    a.href = url; a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+  }
+
+  function exportJson() {
+    var payload = { app: "recall", version: APP_VERSION, exportedAt: Recall.nowIso(), decks: DB.decks, cards: DB.cards };
+    download("recall-export-" + Recall.recallNow() + ".json", JSON.stringify(payload, null, 2), "application/json");
+  }
+
+  function exportCsv() {
+    var text = "\uFEFF" + Recall.cardsToCsv(DB.cards);
+    download("recall-export-" + Recall.recallNow() + ".csv", text, "text/csv;charset=utf-8");
+  }
+
+  function importFromText(text) {
+    var res = Recall.parseImport(text);
+    if (!res.ok) { alert("导入失败：" + res.error); return; }
+    if (!confirm("导入 " + res.cards.length + " 张卡片？将追加到当前数据库（不覆盖现有卡片）。")) return;
+    for (var i = 0; i < res.cards.length; i++) DB.cards.push(res.cards[i]);
+    save(DB);
+    renderAll();
+    alert("已导入 " + res.cards.length + " 张卡片。");
+  }
+
+  function newDeck() {
+    var name = prompt("新牌组名称：", "新牌组");
+    if (!name) return;
+    DB.decks.push({ id: "d" + Date.now().toString(36), name: name.trim(), created: Recall.nowIso() });
+    save(DB);
+    renderAll();
+  }
+
+  // ---- 事件绑定 ----
+  function bind() {
+    $("btnNewCard").addEventListener("click", function () { openEditor(null); $("f-front").focus(); });
+    $("btnSaveCard").addEventListener("click", saveCard);
+    $("btnDeleteCard").addEventListener("click", deleteCard);
+    $("btnDeleteAll").addEventListener("click", deleteAll);
+    $("btnNewDeck").addEventListener("click", newDeck);
+    $("btnExportJson").addEventListener("click", exportJson);
+    $("btnExportCsv").addEventListener("click", exportCsv);
+    $("btnImport").addEventListener("click", function () { $("fileInput").click(); });
+    $("fileInput").addEventListener("change", function (ev) {
+      var file = ev.target.files && ev.target.files[0];
+      if (!file) return;
+      var reader = new FileReader();
+      reader.onload = function () { importFromText(String(reader.result)); $("fileInput").value = ""; };
+      reader.readAsText(file);
+    });
+    $("searchInput").addEventListener("input", renderCardList);
+    $("btnClearSearch").addEventListener("click", function () { $("searchInput").value = ""; renderCardList(); });
+    $("deckSelect").addEventListener("change", function () { currentDeckId = this.value; renderCardList(); });
+    $("cardList").addEventListener("click", function (ev) {
+      var li = ev.target.closest ? ev.target.closest("li[data-id]") : null;
+      if (!li) return;
+      var c = findCard(li.getAttribute("data-id"));
+      if (c) openEditor(c);
+    });
+    $("btnReview").addEventListener("click", startReview);
+    $("btnReveal").addEventListener("click", revealAnswer);
+    $("gradeButtons").addEventListener("click", function (ev) {
+      var b = ev.target.closest ? ev.target.closest("button[data-grade]") : null;
+      if (b) gradeCard(Number(b.getAttribute("data-grade")));
+    });
+    $("btnDismissStorage").addEventListener("click", function () { alertDismissed = true; $("storageAlert").classList.add("hidden"); });
+
+    // 键盘：空格 = 显示答案，1-4 = 打分
+    document.addEventListener("keydown", function (ev) {
+      if (!currentReview) return;
+      var tag = (ev.target && ev.target.tagName || "").toLowerCase();
+      if (tag === "input" || tag === "textarea" || tag === "select") return;
+      if (ev.code === "Space" || ev.key === " " || ev.key === "Spacebar") {
+        if ($("reviewCardBack").classList.contains("hidden")) { ev.preventDefault(); revealAnswer(); }
+        return;
+      }
+      if (!$("reviewCardBack").classList.contains("hidden")) {
+        if (ev.key >= "1" && ev.key <= "4") { ev.preventDefault(); gradeCard(Number(ev.key) - 1); }
+      }
+    });
+
+    // 页面即将卸载时，如内存有未落盘改动，给一次保存机会
+    window.addEventListener("beforeunload", function (ev) {
+      if (!persistedFlag) {
+        ev.preventDefault();
+        ev.returnValue = "";
+      }
+    });
+  }
+
+  // ---- 启动 ----
+  load();
+  bind();
+  renderAll();
+})();
+</script>
+</body>
+</html>
