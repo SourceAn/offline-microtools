@@ -11,6 +11,18 @@ go — no build step, no server, no network, no dependencies, no tracking.
 Both tools keep **all data on your machine** (browser `localStorage`). Nothing
 is ever sent anywhere.
 
+## Live pages (no download needed)
+
+| What | Link | Served as |
+|------|------|-----------|
+| Landing page (both tools, releases, support) | https://sourcean.github.io/offline-microtools/ | HTML |
+| Single-file console (all frozen artefacts embedded) | https://sourcean.github.io/offline-microtools/quickstart.html | HTML |
+| Icon set gallery | https://sourcean.github.io/offline-ui-icons/ | HTML |
+| Latest packaged zips | https://github.com/SourceAn/offline-microtools/releases/latest | download |
+
+All four links are checked for HTTP 200 before this section is published. The pinned
+SHA-256 values below apply to every copy reachable through them.
+
 ## Run
 
 1. Download the file you want (or grab the packaged release assets below).
